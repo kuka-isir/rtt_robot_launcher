@@ -1,0 +1,71 @@
+<launch>
+    <arg name="sim" default="false" />
+
+    <arg name="ops_script"/>
+    <!-- The end effector Frame and base frame for ChainUtils (build the kinematic chains) -->
+    <arg name="tip_link"/>
+    <arg name="root_link"/>
+    <arg name="robot_name"/>
+
+    <arg name="corba" default="false" />
+    <arg name="debug" default="false" />
+    <arg name="rviz" default="false" />
+    <arg name="respawn" default="false" />
+    <arg name="gazebo_gui" default="false"/>
+    <arg name="start_paused" default="false"/>
+
+    <arg if="$(arg sim)"     name="robot_ns" default="/" />
+    <arg unless="$(arg sim)" name="robot_ns" default="/" />
+
+    <arg name="tf_prefix" default="$(arg robot_ns)"/>
+
+    <arg name="ops_args" value="
+        robot_name=$(arg robot_name)
+        is_sim=$(arg sim)
+        robot_ns=$(arg robot_ns)
+        tf_prefix=$(arg tf_prefix)
+        "/>
+    <!-- Orocos log level (never, fatal, critical, error, warning, info, debug, realtime) -->
+    <arg name="log_level" default="warning"/>
+
+
+    <!-- Setting if we want to use the simulated robot or not -->
+    <group if="$(arg sim)">
+      <param name="/use_sim_time" value="true" />
+    </group>
+
+    <!-- Launching gzclient if set by gazebo_gui:=true  -->
+    <node if="$(arg gazebo_gui)" name="gazebo_gui" pkg="gazebo_ros" type="gzclient" respawn="false" output="screen"/>
+
+    <!-- Description and/or gazebo -->
+    <group ns="$(arg robot_ns)">
+        <!-- world is in the urdf, but sometime we want everything in a different namespace, so we'll have /sub/world. This connects /world to /sub/world-->
+        <node pkg="tf" type="static_transform_publisher" name="world_to_$(arg robot_name)_world" args="0 0 0 0 0 0 /world $(arg tf_prefix)/world 100"/>
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher">
+            <param name="publish_frequency" value="250"/>
+        </node>
+
+        <param name="tf_prefix" type="str" value="$(arg tf_prefix)"/>
+        <param name="robot_name" type="str" value="$(arg robot_name)"/>
+        <param name="robot_ns" type="str" value="$(arg robot_ns)"/>
+        <param name="root_link" type="str" value="$(arg root_link)"/>
+        <param name="tip_link" type="str" value="$(arg tip_link)"/>
+        <param name="is_sim" type="bool" value="$(arg sim)"/>
+
+    </group>
+
+    <!-- Launching the OROCOS deployer with the provided ops script -->
+    <group ns="$(arg robot_ns)">
+        <include file="$(find lwr_utils)/launch/deployer.launch">
+            <arg name="CORBA" value="$(arg corba)"/>
+            <arg name="DEPLOYER_ARGS" value="-s $(arg ops_script)"/>
+            <!-- <arg name="NAME" value="gazebo" if="$(arg sim)"/> -->
+            <!-- <arg name="NAME" value="Deployer" unless="$(arg sim)"/> -->
+            <arg name="NAME" value="Deployer"/>
+            <arg name="LOG_LEVEL" value="$(arg log_level)"/>
+            <arg name="DEBUG" value="$(arg debug)"/>
+            <arg name="RESPAWN" value="$(arg respawn)"/>
+            <arg name="EXTRA_DEPLOYER_ARGS" value="$(arg ops_args)"/>
+        </include>
+    </group>
+</launch>

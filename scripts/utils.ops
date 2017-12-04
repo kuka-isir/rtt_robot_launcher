@@ -1,0 +1,194 @@
+
+require("print")
+require("os")
+import("rtt_ros")
+import("rtt_rospack")
+import("rtt_roscomm")
+import("rtt_rosparam")
+loadService("this","rosparam")
+import("rtt_geometry_msgs")
+// to prevent https://github.com/orocos-toolchain/rtt/issues/150
+this.setPeriod(0.001)
+this.start()
+
+global string getRobotName()
+{
+    var string robot_name
+    rosparam.getString("robot_name",robot_name);
+    return robot_name
+}
+
+global string getRobotNs()
+{
+    var string robot_ns
+    rosparam.getString("robot_ns",robot_ns);
+    return robot_ns
+}
+
+global string getTfPrefix()
+{
+    var string tf_prefix
+    rosparam.getString("tf_prefix",tf_prefix);
+    return tf_prefix
+}
+
+global string getRobotDescription()
+{
+    var string robot_description
+    rosparam.getString("robot_description",robot_description);
+    return robot_description
+}
+
+global bool isSim()
+{
+    var bool is_sim = false
+    if(rosparam.getBool("is_sim",is_sim)) then
+        return is_sim
+    else
+        return false
+}
+
+if(!isSim()) then
+    import("rtt_rosnode")
+
+global void loadGazeboComponent(string comp_name)
+{
+    print.log(Info,"Loading Gazebo Component "+comp_name)
+    import("rtt_std_srvs")
+    import("rtt_roscomm")
+    import("rtt_gazebo_embedded")
+
+    loadComponent(comp_name,"RTTGazeboEmbedded")
+    setActivity(comp_name,0.001,10,ORO_SCHED_OTHER)
+    //scripting.eval(comp_name+".argv = strings(\"--verbose\")")
+
+    scripting.eval(comp_name+".add_plugin(\"libgazebo_ros_paths_plugin.so\")")
+    scripting.eval(comp_name+".add_plugin(\"libgazebo_ros_api_plugin.so\")")
+
+    scripting.eval(comp_name+".world_path = ros.find(\"rtt_robot_launcher\")+\"/gazebo/empty.world\"")
+
+    configureComponent(comp_name)
+
+    // Sync ros/gazebo/rtt clocks
+    import("rtt_rosclock")
+    scripting.eval("ros.clock.useROSClockTopic()")
+    scripting.eval("ros.clock.enableSimClock()")
+
+    startComponent(comp_name)
+}
+
+var bool gz_loaded = false
+
+global bool isGazeboLoaded()
+{
+    return gz_loaded
+}
+global void setGazeboLoaded(bool gzloaded)
+{
+    gz_loaded = gzloaded
+}
+var strings std_ports_names = strings("state.JointPosition","state.JointVelocity","state.JointTorque","command.JointTorque");
+
+global bool connectPortsFromList(string controller_name,string robot_name,strings ports_list ,ConnPolicy cp)
+{
+    connectPeers(controller_name,robot_name);
+    var bool connected = true;
+    for(var int i = 0 ; i < ports_list.size ; i = i + 1)
+    {
+        connected = connect(robot_name+"."+ports_list[i],controller_name+"."+ports_list[i],cp);
+        print.log(Info," - "+robot_name+"."+ports_list[i]+" => "+controller_name+"."+ports_list[i]+" : "+connected);
+    }
+    return true;
+}
+global bool connectStandardPorts(string controller_name,string robot_name, ConnPolicy cp)
+{
+    print.log(Info,"Connecting Standard ports from "+controller_name+" to robot "+robot_name);
+    connectPortsFromList(controller_name,robot_name,std_ports_names,cp);
+    return true
+}
+
+
+global string loadStatePublisher(bool start_component)
+{
+    var string robot_name = getRobotName()
+    var string comp_name = robot_name+"_state_pub"
+
+    import("rtt_state_publisher")
+    import("rtt_sensor_msgs")
+
+    loadComponent(comp_name,"RTTStatePublisher")
+
+    setActivity(comp_name,0.01,LowestPriority,ORO_SCHED_OTHER)
+
+    if(!configureComponent(comp_name)) then
+        return ""
+
+    print.ln("\033[34;1mLoading state publisher for "+robot_name+"\033[0m\n")
+
+    connectPeers(comp_name,robot_name)
+
+    var ConnPolicy cp
+    cp.lock_policy = 1
+
+    connect(comp_name+".JointPosition",robot_name+"state.JointPosition",cp)
+    connect(comp_name+".JointVelocity",robot_name+"state.JointVelocity",cp)
+    connect(comp_name+".JointTorque",robot_name+"state.JointTorque",cp)
+
+    stream(comp_name+".JointStates",ros.comm.topic("joint_states"))
+
+    if(start_component) then
+        startComponent(comp_name)
+    return comp_name
+}
+
+global string loadFBSched()
+{
+    import("fbsched");
+    var bool res = loadComponent("fbs","FBSched");
+    setActivity("fbs",0.001,10,ORO_SCHED_RT);
+    return "fbs";
+}
+global bool addComponentToFBSched(string component_name)
+{
+    stopComponent(component_name)
+    scripting.eval(component_name+".setPeriod(0)")
+    connectPeers("fbs",component_name)
+    setMasterSlaveActivity("fbs",component_name)
+    startComponent(component_name)
+    return true;
+}
+
+global void generateGraph()
+{
+    import("rtt_dot_service")
+    loadService("Deployer","dot")
+    scripting.eval("dot.generate()")
+    print.ln("Graph generated. You can now run \n\n\t xdot ~/.ros/orograph.dot")
+}
+
+
+global string loadJointTrajectoryGeneratorKDL(bool start_component)
+{
+  var string robot_name = getRobotName()
+  var string comp_name = robot_name + "_traj_kdl"
+
+  print.ln("\033[34;1mLoading Trajectory generator KDL for "+robot_name+"\033[0m\n")
+
+  import("rtt_ros")
+  ros.import("rtt_joint_traj_generator_kdl")
+  loadComponent(comp_name,"JointTrajGeneratorKDL")
+  setActivity(comp_name,0.001,10,ORO_SCHED_RT);
+
+  var ConnPolicy cp
+  cp.lock_policy = 1
+
+  connect(comp_name+".joint_position_in",robot_name+".JointPosition",cp)
+  connect(comp_name+".joint_velocity_in",robot_name+".JointVelocity",cp)
+  connect(comp_name+".joint_position_out",robot_name+".JointPositionCommand",cp)
+
+  configureComponent(comp_name)
+
+  if(start_component) then
+      startComponent(comp_name)
+  return comp_name;
+}
