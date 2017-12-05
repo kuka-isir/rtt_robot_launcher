@@ -6,6 +6,8 @@
     <arg name="tip_link"/>
     <arg name="root_link"/>
     <arg name="robot_name"/>
+    <!-- Upload the robot description to the ROS parameter server -->
+    <arg name="robot_description_upload_file"/>
 
     <arg name="corba" default="false" />
     <arg name="debug" default="false" />
@@ -20,14 +22,18 @@
     <arg name="tf_prefix" default="$(arg robot_ns)"/>
 
     <arg name="ops_args" value="
-        robot_name=$(arg robot_name)
-        is_sim=$(arg sim)
-        robot_ns=$(arg robot_ns)
-        tf_prefix=$(arg tf_prefix)
+        $(arg robot_name)
+        $(arg sim)
+        $(arg robot_ns)
+        $(arg tf_prefix)
         "/>
     <!-- Orocos log level (never, fatal, critical, error, warning, info, debug, realtime) -->
     <arg name="log_level" default="warning"/>
 
+    <!-- rtt_rosnode spinner threads -->
+    <rosparam ns="Deployer" subst_value="true">
+       spinner_threads : 20
+    </rosparam>
 
     <!-- Setting if we want to use the simulated robot or not -->
     <group if="$(arg sim)">

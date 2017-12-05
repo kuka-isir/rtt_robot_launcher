@@ -2,6 +2,7 @@
 require("print")
 require("os")
 import("rtt_ros")
+import("eigen_typekit")
 import("rtt_rospack")
 import("rtt_roscomm")
 import("rtt_rosparam")
@@ -13,23 +14,17 @@ this.start()
 
 global string getRobotName()
 {
-    var string robot_name
-    rosparam.getString("robot_name",robot_name);
-    return robot_name
+    return os.argv[1]
 }
 
 global string getRobotNs()
 {
-    var string robot_ns
-    rosparam.getString("robot_ns",robot_ns);
-    return robot_ns
+    return os.argv[3]
 }
 
 global string getTfPrefix()
 {
-    var string tf_prefix
-    rosparam.getString("tf_prefix",tf_prefix);
-    return tf_prefix
+    return os.argv[4]
 }
 
 global string getRobotDescription()
@@ -41,15 +36,15 @@ global string getRobotDescription()
 
 global bool isSim()
 {
-    var bool is_sim = false
-    if(rosparam.getBool("is_sim",is_sim)) then
-        return is_sim
+    if(os.argv[2] == "true") then
+        return true
     else
         return false
 }
 
 if(!isSim()) then
     import("rtt_rosnode")
+
 
 global void loadGazeboComponent(string comp_name)
 {
@@ -60,14 +55,16 @@ global void loadGazeboComponent(string comp_name)
 
     loadComponent(comp_name,"RTTGazeboEmbedded")
     setActivity(comp_name,0.001,10,ORO_SCHED_OTHER)
-    //scripting.eval(comp_name+".argv = strings(\"--verbose\")")
 
     scripting.eval(comp_name+".add_plugin(\"libgazebo_ros_paths_plugin.so\")")
     scripting.eval(comp_name+".add_plugin(\"libgazebo_ros_api_plugin.so\")")
-
+    // Sets the world
     scripting.eval(comp_name+".world_path = ros.find(\"rtt_robot_launcher\")+\"/gazebo/empty.world\"")
-
+    // Loads the world
     configureComponent(comp_name)
+    // Now that the world is loaded we can insert a model into it
+    scripting.eval(comp_name+".insertModelFromURDFString(getRobotDescription())")
+
 
     // Sync ros/gazebo/rtt clocks
     import("rtt_rosclock")
@@ -130,9 +127,9 @@ global string loadStatePublisher(bool start_component)
     var ConnPolicy cp
     cp.lock_policy = 1
 
-    connect(comp_name+".JointPosition",robot_name+"state.JointPosition",cp)
-    connect(comp_name+".JointVelocity",robot_name+"state.JointVelocity",cp)
-    connect(comp_name+".JointTorque",robot_name+"state.JointTorque",cp)
+    connect(comp_name+".JointPosition",robot_name+".state.JointPosition",cp)
+    connect(comp_name+".JointVelocity",robot_name+".state.JointVelocity",cp)
+    connect(comp_name+".JointTorque",robot_name+".state.JointTorque",cp)
 
     stream(comp_name+".JointStates",ros.comm.topic("joint_states"))
 
@@ -182,9 +179,9 @@ global string loadJointTrajectoryGeneratorKDL(bool start_component)
   var ConnPolicy cp
   cp.lock_policy = 1
 
-  connect(comp_name+".joint_position_in",robot_name+".JointPosition",cp)
-  connect(comp_name+".joint_velocity_in",robot_name+".JointVelocity",cp)
-  connect(comp_name+".joint_position_out",robot_name+".JointPositionCommand",cp)
+  connect(comp_name+".joint_position_in",robot_name+".state.JointPosition",cp)
+  connect(comp_name+".joint_velocity_in",robot_name+".state.JointVelocity",cp)
+  connect(comp_name+".joint_position_out",robot_name+".command.JointPosition",cp)
 
   configureComponent(comp_name)
 

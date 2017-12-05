@@ -7,6 +7,7 @@
     <arg name="robot_name" value="robot_example"/>
     <arg name="root_link" value="/link_0"/>
     <arg name="tip_link" value="/link_end_effector"/>
+    <arg name="robot_description_upload_file" value="$(find iiwa_description)/launch/iiwa7_upload.launch"/>
   </include>
 
 </launch>
